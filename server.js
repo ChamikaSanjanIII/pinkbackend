@@ -344,19 +344,48 @@ app.get('/api/videos', async (req, res) => {
     const filter = {};
     if (country && country !== 'ALL') filter.country = country;
     if (req.query.category && req.query.category !== 'All') {
-      filter.category = req.query.category;
+      if (req.query.category.toLowerCase() === 'general') {
+        filter.$or = [
+          { category: { $regex: /^general$/i } },
+          { category: { $exists: false } },
+          { category: null },
+          { category: '' }
+        ];
+      } else {
+        filter.category = req.query.category;
+      }
     }
     if (search) {
-      filter.$or = [
-        { title:    { $regex: search, $options: 'i' } },
-        { country:  { $regex: search, $options: 'i' } },
-        { category: { $regex: search, $options: 'i' } }
-      ];
+      if (search.toLowerCase() === 'general') {
+        filter.$or = [
+          { title:    { $regex: search, $options: 'i' } },
+          { category: { $regex: /^general$/i } },
+          { category: { $exists: false } },
+          { category: null },
+          { category: '' }
+        ];
+      } else {
+        filter.$or = [
+          { title:    { $regex: search, $options: 'i' } },
+          { country:  { $regex: search, $options: 'i' } },
+          { category: { $regex: search, $options: 'i' } }
+        ];
+      }
+    }
+
+    const sortParam = (req.query.sort || 'latest').toLowerCase();
+    let sortObj = { createdAt: -1 };
+    if (sortParam === 'popular') {
+      sortObj = { views: -1, createdAt: -1 };
+    } else if (sortParam === 'top_rated') {
+      sortObj = { likes: -1, createdAt: -1 };
+    } else if (sortParam === 'latest') {
+      sortObj = { createdAt: -1, _id: -1 };
     }
 
     const total  = await Video.countDocuments(filter);
     const videos = await Video.find(filter)
-      .sort({ createdAt: -1 })
+      .sort(sortObj)
       .skip((page - 1) * limit)
       .limit(limit);
 
@@ -375,22 +404,55 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Public: Get Category counts dynamically
+// Public: Get Category counts dynamically (Counting both Category tag AND matching Video Titles & Tags)
 app.get('/api/categories/stats', async (req, res) => {
   try {
-    const stats = await Video.aggregate([
-      { $match: { isRemoved: { $ne: true } } },
-      { $group: { _id: '$category', count: { $sum: 1 } } },
-      { $sort: { count: -1 } }
-    ]);
+    const PRESET_NAMES = [
+      'Asian', 'Blowjob', 'Brunette', 'Big Tits', 'Hardcore', 'Amateur', 
+      'Cumshot', 'Pornstar', 'Blonde', 'Anal', 'Big Dick', 'Teen', 
+      'Homemade', 'POV', 'MILF', 'Lesbian', 'HD Video', 'Hotlink', 'Action',
+      'Compilation', 'Erotica', 'Hentai', 'Behind the Scenes'
+    ];
 
-    const result = stats.map(s => ({
-      name: s._id || 'General',
-      count: s.count
-    }));
+    // Find all distinct category values actually used in the database
+    const dbDistinctCategories = await Video.distinct('category', { isRemoved: { $ne: true } });
+    
+    // Combine preset names and existing db category names
+    const allCategoryNames = Array.from(new Set([
+      ...PRESET_NAMES,
+      ...dbDistinctCategories.filter(Boolean).map(c => c.trim())
+    ])).filter(name => name.toLowerCase() !== 'general' && name.toLowerCase() !== 'all');
+
+    // Compute counts exactly identical to search filter ($or on category, title, country)
+    const categoryPromises = allCategoryNames.map(async (name) => {
+      const count = await Video.countDocuments({
+        isRemoved: { $ne: true },
+        $or: [
+          { category: { $regex: name, $options: 'i' } },
+          { title: { $regex: name, $options: 'i' } },
+          { country: { $regex: name, $options: 'i' } }
+        ]
+      });
+      return { name, count };
+    });
+
+    const categoriesResults = await Promise.all(categoryPromises);
+
+    // Also get General count (all active videos in database)
+    const totalVideos = await Video.countDocuments({ isRemoved: { $ne: true } });
+
+    // Show ALL categories (even if 0, or with whatever real matching count they have)
+    // Sort descending by count, then alphabetically
+    const sortedCategories = categoriesResults.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    const result = [
+      { name: 'General', count: totalVideos },
+      ...sortedCategories
+    ];
 
     res.json(result);
   } catch (err) {
+    console.error("Category stats error:", err);
     res.status(500).json({ error: 'Failed to fetch category statistics' });
   }
 });
