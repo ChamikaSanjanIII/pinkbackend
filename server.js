@@ -54,6 +54,7 @@ const VideoSchema = new mongoose.Schema({
   image: { type: String, default: '' },
   link: { type: String, default: '' },
   country: { type: String, default: '' },
+  category: { type: String, default: 'General', index: true },
   isRemoved: { type: Boolean, default: false },
   embedUrl: { type: String, default: '' },
   views: { type: Number, default: 0 },
@@ -342,10 +343,14 @@ app.get('/api/videos', async (req, res) => {
     // Build filter
     const filter = {};
     if (country && country !== 'ALL') filter.country = country;
+    if (req.query.category && req.query.category !== 'All') {
+      filter.category = req.query.category;
+    }
     if (search) {
       filter.$or = [
-        { title:   { $regex: search, $options: 'i' } },
-        { country: { $regex: search, $options: 'i' } }
+        { title:    { $regex: search, $options: 'i' } },
+        { country:  { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } }
       ];
     }
 
@@ -367,6 +372,26 @@ app.get('/api/videos', async (req, res) => {
   } catch (err) {
     console.error("Fetch videos error:", err);
     res.status(500).json({ error: 'Failed to fetch videos.' });
+  }
+});
+
+// Public: Get Category counts dynamically
+app.get('/api/categories/stats', async (req, res) => {
+  try {
+    const stats = await Video.aggregate([
+      { $match: { isRemoved: { $ne: true } } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    const result = stats.map(s => ({
+      name: s._id || 'General',
+      count: s.count
+    }));
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch category statistics' });
   }
 });
 
@@ -593,7 +618,7 @@ app.post('/api/videos/bulk', authMiddleware, async (req, res) => {
 // Admin: Create video
 app.post('/api/videos', authMiddleware, async (req, res) => {
   try {
-    const { title, image, link, country, isRemoved, embedUrl, description, duration, slug } = req.body;
+    const { title, image, link, country, category, isRemoved, embedUrl, description, duration, slug } = req.body;
     const computedSlug = slug || generateSlug(link, title);
     const finalCountry = country ? country.trim().toUpperCase() : detectCountry(title, link);
 
@@ -602,6 +627,7 @@ app.post('/api/videos', authMiddleware, async (req, res) => {
       image: image || '',
       link: link || '',
       country: finalCountry,
+      category: category || 'General',
       isRemoved: Boolean(isRemoved),
       embedUrl: embedUrl || '',
       description: description || '',
@@ -618,7 +644,7 @@ app.post('/api/videos', authMiddleware, async (req, res) => {
 // Admin: Update video
 app.put('/api/videos/:id', authMiddleware, async (req, res) => {
   try {
-    const { title, image, link, country, isRemoved, embedUrl, description, duration, slug } = req.body;
+    const { title, image, link, country, category, isRemoved, embedUrl, description, duration, slug } = req.body;
     const computedSlug = slug || generateSlug(link, title);
 
     const updated = await Video.findByIdAndUpdate(
@@ -628,6 +654,7 @@ app.put('/api/videos/:id', authMiddleware, async (req, res) => {
         image,
         link,
         country,
+        category: category || 'General',
         isRemoved: Boolean(isRemoved),
         embedUrl,
         description: description || '',
