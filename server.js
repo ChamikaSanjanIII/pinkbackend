@@ -493,6 +493,36 @@ app.get('/api/categories/latest-sections', async (req, res) => {
   }
 });
 
+// Public: Search suggestions / autocomplete by title
+app.get('/api/videos/suggestions', async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q || q.length < 1) {
+      return res.json([]);
+    }
+
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+
+    const videos = await Video.find({
+      title: { $regex: regex },
+      isRemoved: { $ne: true }
+    })
+      .select('title slug')
+      .limit(8)
+      .lean();
+
+    res.json(videos.map(v => ({
+      id: v._id,
+      title: v.title,
+      slug: v.slug
+    })));
+  } catch (err) {
+    console.error("Suggestions error:", err);
+    res.status(500).json({ error: 'Failed to fetch suggestions' });
+  }
+});
+
 // Public: Get single video by ID or Slug
 app.get('/api/videos/:idOrSlug', async (req, res) => {
   try {
