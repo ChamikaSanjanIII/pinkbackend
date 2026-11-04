@@ -457,6 +457,42 @@ app.get('/api/categories/stats', async (req, res) => {
   }
 });
 
+// Public: Get latest videos grouped by categories for home sections
+app.get('/api/categories/latest-sections', async (req, res) => {
+  try {
+    const CATEGORIES = [
+      'Asian', 'Blowjob', 'Brunette', 'Big Tits', 'Hardcore', 'Amateur',
+      'Cumshot', 'Blonde', 'Anal', 'Teen', 'Homemade', 'POV', 'MILF', 'Lesbian'
+    ];
+
+    const sections = await Promise.all(
+      CATEGORIES.map(async (catName) => {
+        const filter = {
+          isRemoved: { $ne: true },
+          $or: [
+            { category: { $regex: catName, $options: 'i' } },
+            { title: { $regex: catName, $options: 'i' } }
+          ]
+        };
+        const latestVideos = await Video.find(filter)
+          .sort({ createdAt: -1, _id: -1 })
+          .limit(6);
+
+        return {
+          category: catName,
+          videos: latestVideos
+        };
+      })
+    );
+
+    // Return only categories that actually have at least 1 video
+    res.json(sections.filter(s => s.videos && s.videos.length > 0));
+  } catch (err) {
+    console.error("Latest category sections error:", err);
+    res.status(500).json({ error: 'Failed to fetch category sections' });
+  }
+});
+
 // Public: Get single video by ID or Slug
 app.get('/api/videos/:idOrSlug', async (req, res) => {
   try {
