@@ -334,7 +334,14 @@ app.post('/api/dramas', protect, adminOnly, async (req, res) => {
 
 app.put('/api/dramas/:id', protect, adminOnly, async (req, res) => {
   try {
-    const drama = await Drama.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const updateData = { ...req.body };
+    if (updateData.episodes && Array.isArray(updateData.episodes)) {
+      updateData.totalEpisodes = updateData.episodes.length;
+      if (updateData.episodes.length > 0 && updateData.episodes[0].videoUrl) {
+        updateData.trailerUrl = updateData.episodes[0].videoUrl;
+      }
+    }
+    const drama = await Drama.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
     if (!drama) return res.status(404).json({ success: false, message: 'Drama not found' });
     res.json({ success: true, data: drama });
   } catch (error) {
