@@ -82,6 +82,7 @@ const Video = mongoose.model('Video', VideoSchema);
 const ReportSchema = new mongoose.Schema({
   videoId: { type: String, required: true },
   videoTitle: { type: String, default: '' },
+  reason: { type: String, default: 'Broken Link' },
   captchaToken: { type: String, default: '' },
   status: { type: String, default: 'pending' },
   timestamp: { type: Date, default: Date.now }
@@ -821,10 +822,12 @@ app.delete('/api/videos/:id', authMiddleware, async (req, res) => {
 // Public: Submit report
 app.post('/api/reports', async (req, res) => {
   try {
-    const { videoId, videoTitle, captchaToken } = req.body;
+    const { videoId, videoTitle, reason, captchaToken } = req.body;
+    const finalReason = reason || (captchaToken && captchaToken.startsWith('reason:') ? captchaToken.replace('reason:', '') : (captchaToken || 'Broken Link'));
     const report = await Report.create({
       videoId,
       videoTitle,
+      reason: finalReason,
       captchaToken: captchaToken || '',
       status: 'pending'
     });
