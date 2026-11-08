@@ -55,6 +55,7 @@ const VideoSchema = new mongoose.Schema({
   link: { type: String, default: '' },
   country: { type: String, default: '' },
   category: { type: String, default: 'General', index: true },
+  pornstar: { type: String, default: '', index: true }, // Pornstar name reference
   isRemoved: { type: Boolean, default: false },
   embedUrl: { type: String, default: '' },
   views: { type: Number, default: 0 },
@@ -77,6 +78,39 @@ VideoSchema.set('toJSON', {
 });
 
 const Video = mongoose.model('Video', VideoSchema);
+
+// Pornstar Schema
+const PornstarSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true, trim: true },
+  slug: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+  avatar: { type: String, default: '' },
+  cover: { type: String, default: '' },
+  description: { type: String, default: '' },
+  followers: { type: String, default: '10K' },
+  verified: { type: Boolean, default: true },
+  socialLinks: {
+    fansly: { type: String, default: '' },
+    twitter: { type: String, default: '' },
+    tiktok: { type: String, default: '' },
+    instagram: { type: String, default: '' },
+    instagram2: { type: String, default: '' },
+    telegram: { type: String, default: '' },
+    onlyfans: { type: String, default: '' }
+  },
+  tags: [{ type: String }]
+}, { timestamps: true });
+
+PornstarSchema.set('toJSON', {
+  virtuals: true,
+  transform: (doc, ret) => {
+    ret.$id = ret._id.toString();
+    ret.$createdAt = ret.createdAt;
+    ret.$updatedAt = ret.updatedAt;
+    return ret;
+  }
+});
+
+const Pornstar = mongoose.model('Pornstar', PornstarSchema);
 
 // Broken Link / Content Reports Schema
 const ReportSchema = new mongoose.Schema({
@@ -344,6 +378,9 @@ app.get('/api/videos', async (req, res) => {
     // Build filter
     const filter = {};
     if (country && country !== 'ALL') filter.country = country;
+    if (req.query.pornstar) {
+      filter.pornstar = { $regex: new RegExp(`^${req.query.pornstar.trim()}$`, 'i') };
+    }
     if (req.query.category && req.query.category !== 'All') {
       if (req.query.category.toLowerCase() === 'general') {
         filter.$or = [
@@ -491,6 +528,177 @@ app.get('/api/categories/latest-sections', async (req, res) => {
   } catch (err) {
     console.error("Latest category sections error:", err);
     res.status(500).json({ error: 'Failed to fetch category sections' });
+  }
+});
+
+// ----------------------------------------------------
+// PORNSTARS API ENDPOINTS
+// ----------------------------------------------------
+
+// Public: Get all pornstars (with real video count)
+app.get('/api/pornstars', async (req, res) => {
+  try {
+    const pornstars = await Pornstar.find().sort({ createdAt: -1 });
+    
+    // Calculate actual video counts for each pornstar
+    const result = await Promise.all(pornstars.map(async (star) => {
+      const starObj = star.toJSON();
+      const count = await Video.countDocuments({
+        $or: [
+          { pornstar: { $regex: new RegExp(`^${star.name}$`, 'i') } },
+          { title: { $regex: star.name, $options: 'i' } }
+        ],
+        isRemoved: { $ne: true }
+      });
+      starObj.videoCount = count;
+      return starObj;
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error("Get pornstars error:", err);
+    res.status(500).json({ error: 'Failed to fetch pornstars.' });
+  }
+});
+
+// Public: Get single pornstar by slug or id + their videos
+app.get('/api/pornstars/:slugOrId', async (req, res) => {
+  try {
+    const { slugOrId } = req.params;
+    let star = null;
+    if (mongoose.Types.ObjectId.isValid(slugOrId)) {
+      star = await Pornstar.findById(slugOrId);
+    }
+    if (!star) {
+      star = await Pornstar.findOne({ slug: slugOrId.toLowerCase().trim() });
+    }
+    if (!star) {
+      return res.status(404).json({ error: 'Pornstar not found' });
+    }
+
+    const starObj = star.toJSON();
+    // Fetch videos for this pornstar
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 24);
+    const tag = (req.query.tag || '').trim();
+
+    const videoFilter = {
+      $or: [
+        { pornstar: { $regex: new RegExp(`^${star.name}$`, 'i') } },
+        { title: { $regex: star.name, $options: 'i' } }
+      ],
+      isRemoved: { $ne: true }
+    };
+
+    if (tag && tag.toLowerCase() !== 'all') {
+      videoFilter.$and = [
+        {
+          $or: [
+            { category: { $regex: tag, $options: 'i' } },
+            { title: { $regex: tag, $options: 'i' } }
+          ]
+        }
+      ];
+    }
+
+    const totalVideos = await Video.countDocuments(videoFilter);
+    const videos = await Video.find(videoFilter)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    starObj.videoCount = totalVideos;
+
+    res.json({
+      pornstar: starObj,
+      videos,
+      pagination: {
+        page,
+        limit,
+        total: totalVideos,
+        totalPages: Math.ceil(totalVideos / limit)
+      }
+    });
+  } catch (err) {
+    console.error("Get single pornstar error:", err);
+    res.status(500).json({ error: 'Failed to fetch pornstar profile.' });
+  }
+});
+
+// Admin: Create Pornstar
+app.post('/api/admin/pornstars', authMiddleware, async (req, res) => {
+  try {
+    const { name, avatar, cover, description, followers, verified, socialLinks, tags } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+
+    const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const existing = await Pornstar.findOne({ $or: [{ name: name.trim() }, { slug }] });
+    if (existing) {
+      return res.status(400).json({ error: 'A pornstar with this name or slug already exists' });
+    }
+
+    const newStar = await Pornstar.create({
+      name: name.trim(),
+      slug,
+      avatar: avatar || '',
+      cover: cover || '',
+      description: description || '',
+      followers: followers || '10K',
+      verified: verified !== undefined ? verified : true,
+      socialLinks: socialLinks || {},
+      tags: Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : [])
+    });
+
+    res.status(201).json(newStar);
+  } catch (err) {
+    console.error("Create pornstar error:", err);
+    res.status(500).json({ error: 'Failed to create pornstar' });
+  }
+});
+
+// Admin: Update Pornstar
+app.put('/api/admin/pornstars/:id', authMiddleware, async (req, res) => {
+  try {
+    const { name, avatar, cover, description, followers, verified, socialLinks, tags } = req.body;
+    const updateData = {};
+    if (name) {
+      updateData.name = name.trim();
+      updateData.slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    }
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (cover !== undefined) updateData.cover = cover;
+    if (description !== undefined) updateData.description = description;
+    if (followers !== undefined) updateData.followers = followers;
+    if (verified !== undefined) updateData.verified = verified;
+    if (socialLinks !== undefined) updateData.socialLinks = socialLinks;
+    if (tags !== undefined) {
+      updateData.tags = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
+    }
+
+    const updated = await Pornstar.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (!updated) {
+      return res.status(404).json({ error: 'Pornstar not found' });
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error("Update pornstar error:", err);
+    res.status(500).json({ error: 'Failed to update pornstar' });
+  }
+});
+
+// Admin: Delete Pornstar
+app.delete('/api/admin/pornstars/:id', authMiddleware, async (req, res) => {
+  try {
+    const deleted = await Pornstar.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Pornstar not found' });
+    }
+    res.json({ message: 'Pornstar deleted successfully' });
+  } catch (err) {
+    console.error("Delete pornstar error:", err);
+    res.status(500).json({ error: 'Failed to delete pornstar' });
   }
 });
 
@@ -747,7 +955,7 @@ app.post('/api/videos/bulk', authMiddleware, async (req, res) => {
 // Admin: Create video
 app.post('/api/videos', authMiddleware, async (req, res) => {
   try {
-    const { title, image, link, country, category, isRemoved, embedUrl, description, duration, slug } = req.body;
+    const { title, image, link, country, category, pornstar, isRemoved, embedUrl, description, duration, slug } = req.body;
     const computedSlug = slug || generateSlug(link, title);
     const finalCountry = country ? country.trim().toUpperCase() : detectCountry(title, link);
 
@@ -757,6 +965,7 @@ app.post('/api/videos', authMiddleware, async (req, res) => {
       link: link || '',
       country: finalCountry,
       category: category || 'General',
+      pornstar: pornstar ? pornstar.trim() : '',
       isRemoved: Boolean(isRemoved),
       embedUrl: embedUrl || '',
       description: description || '',
@@ -773,7 +982,7 @@ app.post('/api/videos', authMiddleware, async (req, res) => {
 // Admin: Update video
 app.put('/api/videos/:id', authMiddleware, async (req, res) => {
   try {
-    const { title, image, link, country, category, isRemoved, embedUrl, description, duration, slug } = req.body;
+    const { title, image, link, country, category, pornstar, isRemoved, embedUrl, description, duration, slug } = req.body;
     const computedSlug = slug || generateSlug(link, title);
 
     const updated = await Video.findByIdAndUpdate(
@@ -784,6 +993,7 @@ app.put('/api/videos/:id', authMiddleware, async (req, res) => {
         link,
         country,
         category: category || 'General',
+        pornstar: pornstar !== undefined ? pornstar.trim() : '',
         isRemoved: Boolean(isRemoved),
         embedUrl,
         description: description || '',
