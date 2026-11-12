@@ -495,6 +495,58 @@ app.get('/api/categories/stats', async (req, res) => {
   }
 });
 
+// Public: Get Country video counts dynamically
+app.get('/api/countries/stats', async (req, res) => {
+  try {
+    const COUNTRIES_DEF = [
+      { code: 'ALL', name: 'All Countries', flag: '🌐' },
+      { code: 'LK', name: 'Sri Lanka', flag: '🇱🇰' },
+      { code: 'IN', name: 'India', flag: '🇮🇳' },
+      { code: 'BD', name: 'Bangladesh', flag: '🇧🇩' },
+      { code: 'PK', name: 'Pakistan', flag: '🇵🇰' },
+      { code: 'NP', name: 'Nepal', flag: '🇳🇵' },
+      { code: 'CN', name: 'China', flag: '🇨🇳' },
+      { code: 'JP', name: 'Japan', flag: '🇯🇵' },
+      { code: 'KR', name: 'Korea', flag: '🇰🇷' },
+      { code: 'TW', name: 'Taiwan', flag: '🇹🇼' },
+      { code: 'TH', name: 'Thailand', flag: '🇹🇭' },
+      { code: 'VN', name: 'Vietnam', flag: '🇻🇳' },
+      { code: 'PH', name: 'Philippines', flag: '🇵🇭' },
+      { code: 'ID', name: 'Indonesia', flag: '🇮🇩' },
+      { code: 'MY', name: 'Malaysia', flag: '🇲🇾' },
+      { code: 'SG', name: 'Singapore', flag: '🇸🇬' },
+      { code: 'US', name: 'United States', flag: '🇺🇸' },
+      { code: 'GB', name: 'United Kingdom', flag: '🇬🇧' },
+      { code: 'RU', name: 'Russia', flag: '🇷🇺' }
+    ];
+
+    const totalVideos = await Video.countDocuments({ isRemoved: { $ne: true } });
+
+    const countryPromises = COUNTRIES_DEF.filter(c => c.code !== 'ALL').map(async (c) => {
+      const count = await Video.countDocuments({
+        isRemoved: { $ne: true },
+        country: c.code
+      });
+      return { ...c, count };
+    });
+
+    const countryResults = await Promise.all(countryPromises);
+
+    // Keep all countries, sort by count descending
+    const sorted = countryResults.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    const result = [
+      { code: 'ALL', name: 'All Countries', flag: '🌐', count: totalVideos },
+      ...sorted
+    ];
+
+    res.json(result);
+  } catch (err) {
+    console.error("Country stats error:", err);
+    res.status(500).json({ error: 'Failed to fetch country statistics' });
+  }
+});
+
 // Public: Get latest videos grouped by categories for home sections
 app.get('/api/categories/latest-sections', async (req, res) => {
   try {
