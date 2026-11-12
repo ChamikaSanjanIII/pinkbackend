@@ -505,9 +505,13 @@ app.get('/api/countries/stats', async (req, res) => {
       { code: 'BD', name: 'Bangladesh', flag: '🇧🇩' },
       { code: 'PK', name: 'Pakistan', flag: '🇵🇰' },
       { code: 'NP', name: 'Nepal', flag: '🇳🇵' },
-      { code: 'CN', name: 'China', flag: '🇨🇳' },
+      { code: 'US', name: 'United States', flag: '🇺🇸' },
+      { code: 'GB', name: 'United Kingdom', flag: '🇬🇧' },
+      { code: 'CA', name: 'Canada', flag: '🇨🇦' },
+      { code: 'AU', name: 'Australia', flag: '🇦🇺' },
       { code: 'JP', name: 'Japan', flag: '🇯🇵' },
       { code: 'KR', name: 'Korea', flag: '🇰🇷' },
+      { code: 'CN', name: 'China', flag: '🇨🇳' },
       { code: 'TW', name: 'Taiwan', flag: '🇹🇼' },
       { code: 'TH', name: 'Thailand', flag: '🇹🇭' },
       { code: 'VN', name: 'Vietnam', flag: '🇻🇳' },
@@ -515,24 +519,80 @@ app.get('/api/countries/stats', async (req, res) => {
       { code: 'ID', name: 'Indonesia', flag: '🇮🇩' },
       { code: 'MY', name: 'Malaysia', flag: '🇲🇾' },
       { code: 'SG', name: 'Singapore', flag: '🇸🇬' },
-      { code: 'US', name: 'United States', flag: '🇺🇸' },
-      { code: 'GB', name: 'United Kingdom', flag: '🇬🇧' },
-      { code: 'RU', name: 'Russia', flag: '🇷🇺' }
+      { code: 'MM', name: 'Myanmar', flag: '🇲🇲' },
+      { code: 'KH', name: 'Cambodia', flag: '🇰🇭' },
+      { code: 'RU', name: 'Russia', flag: '🇷🇺' },
+      { code: 'UA', name: 'Ukraine', flag: '🇺🇦' },
+      { code: 'DE', name: 'Germany', flag: '🇩🇪' },
+      { code: 'FR', name: 'France', flag: '🇫🇷' },
+      { code: 'IT', name: 'Italy', flag: '🇮🇹' },
+      { code: 'ES', name: 'Spain', flag: '🇪🇸' },
+      { code: 'NL', name: 'Netherlands', flag: '🇳🇱' },
+      { code: 'BR', name: 'Brazil', flag: '🇧🇷' },
+      { code: 'MX', name: 'Mexico', flag: '🇲🇽' },
+      { code: 'CO', name: 'Colombia', flag: '🇨🇴' },
+      { code: 'AR', name: 'Argentina', flag: '🇦🇷' },
+      { code: 'CL', name: 'Chile', flag: '🇨🇱' },
+      { code: 'PE', name: 'Peru', flag: '🇵🇪' },
+      { code: 'VE', name: 'Venezuela', flag: '🇻🇪' },
+      { code: 'TR', name: 'Turkey', flag: '🇹🇷' },
+      { code: 'AE', name: 'United Arab Emirates', flag: '🇦🇪' },
+      { code: 'SA', name: 'Saudi Arabia', flag: '🇸🇦' },
+      { code: 'IR', name: 'Iran', flag: '🇮🇷' },
+      { code: 'IQ', name: 'Iraq', flag: '🇮🇶' },
+      { code: 'EG', name: 'Egypt', flag: '🇪🇬' },
+      { code: 'LB', name: 'Lebanon', flag: '🇱🇧' },
+      { code: 'IL', name: 'Israel', flag: '🇮🇱' },
+      { code: 'QA', name: 'Qatar', flag: '🇶🇦' },
+      { code: 'KW', name: 'Kuwait', flag: '🇰🇼' },
+      { code: 'ZA', name: 'South Africa', flag: '🇿🇦' },
+      { code: 'NG', name: 'Nigeria', flag: '🇳🇬' },
+      { code: 'KE', name: 'Kenya', flag: '🇰🇪' },
+      { code: 'GH', name: 'Ghana', flag: '🇬🇭' },
+      { code: 'MA', name: 'Morocco', flag: '🇲🇦' },
+      { code: 'PT', name: 'Portugal', flag: '🇵🇹' },
+      { code: 'BE', name: 'Belgium', flag: '🇧🇪' },
+      { code: 'CH', name: 'Switzerland', flag: '🇨🇭' },
+      { code: 'SE', name: 'Sweden', flag: '🇸🇪' },
+      { code: 'NO', name: 'Norway', flag: '🇳🇴' },
+      { code: 'FI', name: 'Finland', flag: '🇫🇮' },
+      { code: 'DK', name: 'Denmark', flag: '🇩🇰' },
+      { code: 'PL', name: 'Poland', flag: '🇵🇱' },
+      { code: 'CZ', name: 'Czech Republic', flag: '🇨🇿' },
+      { code: 'RO', name: 'Romania', flag: '🇷🇴' },
+      { code: 'HU', name: 'Hungary', flag: '🇭🇺' },
+      { code: 'GR', name: 'Greece', flag: '🇬🇷' },
+      { code: 'IE', name: 'Ireland', flag: '🇮🇪' },
+      { code: 'NZ', name: 'New Zealand', flag: '🇳🇿' },
+      { code: 'AT', name: 'Austria', flag: '🇦🇹' }
     ];
 
     const totalVideos = await Video.countDocuments({ isRemoved: { $ne: true } });
 
-    const countryPromises = COUNTRIES_DEF.filter(c => c.code !== 'ALL').map(async (c) => {
-      const count = await Video.countDocuments({
-        isRemoved: { $ne: true },
-        country: c.code
-      });
-      return { ...c, count };
+    // Aggregate real counts per country from DB
+    const aggCounts = await Video.aggregate([
+      { $match: { isRemoved: { $ne: true }, country: { $exists: true, $ne: '' } } },
+      { $group: { _id: '$country', count: { $sum: 1 } } }
+    ]);
+    const countMap = {};
+    aggCounts.forEach(item => {
+      if (item._id) countMap[item._id.toUpperCase()] = item.count;
     });
 
-    const countryResults = await Promise.all(countryPromises);
+    // Check if db has country codes not in predefined list
+    const existingCodes = new Set(COUNTRIES_DEF.map(c => c.code));
+    Object.keys(countMap).forEach(code => {
+      if (!existingCodes.has(code)) {
+        COUNTRIES_DEF.push({ code, name: code, flag: '🏳️' });
+      }
+    });
 
-    // Keep all countries, sort by count descending
+    const countryResults = COUNTRIES_DEF.filter(c => c.code !== 'ALL').map(c => ({
+      ...c,
+      count: countMap[c.code] || 0
+    }));
+
+    // Sort by count descending, then alphabetical
     const sorted = countryResults.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
     const result = [
