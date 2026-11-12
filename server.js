@@ -79,6 +79,14 @@ VideoSchema.set('toJSON', {
 
 const Video = mongoose.model('Video', VideoSchema);
 
+// Cached Category Stats Schema (stores precomputed counts in DB)
+const CategoryStatSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true, trim: true },
+  count: { type: Number, default: 0 }
+}, { timestamps: true });
+
+const CategoryStat = mongoose.model('CategoryStat', CategoryStatSchema);
+
 // Pornstar Schema
 const PornstarSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true, trim: true },
@@ -442,52 +450,71 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Public: Get Category counts dynamically (Counting both Category tag AND matching Video Titles & Tags)
+const PRESET_CATEGORY_NAMES = [
+  'Asian', 'Blowjob', 'Brunette', 'Big Tits', 'Hardcore', 'Amateur', 
+  'Cumshot', 'Pornstar', 'Blonde', 'Anal', 'Big Dick', 'Teen', 
+  'Homemade', 'POV', 'MILF', 'Lesbian', 'HD Video', 'Hotlink', 'Action',
+  'Compilation', 'Erotica', 'Hentai', 'Behind the Scenes'
+];
+
+async function recomputeCategoryStats() {
+  const dbDistinctCategories = await Video.distinct('category', { isRemoved: { $ne: true } });
+  const allCategoryNames = Array.from(new Set([
+    ...PRESET_CATEGORY_NAMES,
+    ...dbDistinctCategories.filter(Boolean).map(c => c.trim())
+  ])).filter(name => name.toLowerCase() !== 'general' && name.toLowerCase() !== 'all');
+
+  const categoryPromises = allCategoryNames.map(async (name) => {
+    const count = await Video.countDocuments({
+      isRemoved: { $ne: true },
+      $or: [
+        { category: { $regex: name, $options: 'i' } },
+        { title: { $regex: name, $options: 'i' } },
+        { country: { $regex: name, $options: 'i' } }
+      ]
+    });
+    return { name, count };
+  });
+
+  const [categoriesResults, totalVideos] = await Promise.all([
+    Promise.all(categoryPromises),
+    Video.countDocuments({ isRemoved: { $ne: true } })
+  ]);
+
+  const sortedCategories = categoriesResults.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const result = [
+    { name: 'General', count: totalVideos },
+    ...sortedCategories
+  ];
+
+  const ops = result.map(item => ({
+    updateOne: {
+      filter: { name: item.name },
+      update: { $set: { name: item.name, count: item.count } },
+      upsert: true
+    }
+  }));
+  if (ops.length > 0) {
+    await CategoryStat.bulkWrite(ops, { ordered: false });
+  }
+
+  return result;
+}
+
+// Public: Get Category counts from cached DB collection (instant, no full collection scan)
 app.get('/api/categories/stats', async (req, res) => {
   try {
-    const PRESET_NAMES = [
-      'Asian', 'Blowjob', 'Brunette', 'Big Tits', 'Hardcore', 'Amateur', 
-      'Cumshot', 'Pornstar', 'Blonde', 'Anal', 'Big Dick', 'Teen', 
-      'Homemade', 'POV', 'MILF', 'Lesbian', 'HD Video', 'Hotlink', 'Action',
-      'Compilation', 'Erotica', 'Hentai', 'Behind the Scenes'
-    ];
+    const cached = await CategoryStat.find({}, { _id: 0, name: 1, count: 1 }).lean();
+    if (cached && cached.length > 0) {
+      const general = cached.find(c => c.name === 'General') || { name: 'General', count: 0 };
+      const others = cached
+        .filter(c => c.name !== 'General')
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      return res.json([general, ...others]);
+    }
 
-    // Find all distinct category values actually used in the database
-    const dbDistinctCategories = await Video.distinct('category', { isRemoved: { $ne: true } });
-    
-    // Combine preset names and existing db category names
-    const allCategoryNames = Array.from(new Set([
-      ...PRESET_NAMES,
-      ...dbDistinctCategories.filter(Boolean).map(c => c.trim())
-    ])).filter(name => name.toLowerCase() !== 'general' && name.toLowerCase() !== 'all');
-
-    // Compute counts exactly identical to search filter ($or on category, title, country)
-    const categoryPromises = allCategoryNames.map(async (name) => {
-      const count = await Video.countDocuments({
-        isRemoved: { $ne: true },
-        $or: [
-          { category: { $regex: name, $options: 'i' } },
-          { title: { $regex: name, $options: 'i' } },
-          { country: { $regex: name, $options: 'i' } }
-        ]
-      });
-      return { name, count };
-    });
-
-    const categoriesResults = await Promise.all(categoryPromises);
-
-    // Also get General count (all active videos in database)
-    const totalVideos = await Video.countDocuments({ isRemoved: { $ne: true } });
-
-    // Show ALL categories (even if 0, or with whatever real matching count they have)
-    // Sort descending by count, then alphabetically
-    const sortedCategories = categoriesResults.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-
-    const result = [
-      { name: 'General', count: totalVideos },
-      ...sortedCategories
-    ];
-
+    // First-time initialization if CategoryStat collection is empty
+    const result = await recomputeCategoryStats();
     res.json(result);
   } catch (err) {
     console.error("Category stats error:", err);
@@ -794,6 +821,7 @@ app.put('/api/admin/pornstars/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Pornstar not found' });
     }
     res.json(updated);
+    recomputeCategoryStats().catch(e => console.error('CategoryStat sync error:', e));
   } catch (err) {
     console.error("Update pornstar error:", err);
     res.status(500).json({ error: 'Failed to update pornstar' });
@@ -1058,6 +1086,7 @@ app.post('/api/videos/bulk', authMiddleware, async (req, res) => {
       updatedCount: updatedCount,
       skippedCount: 0
     });
+    recomputeCategoryStats().catch(e => console.error('CategoryStat sync error:', e));
   } catch (err) {
     console.error("Bulk import/replace error:", err);
     res.status(500).json({ error: 'Failed to process videos.', details: err.message });
@@ -1085,6 +1114,7 @@ app.post('/api/videos', authMiddleware, async (req, res) => {
       slug: computedSlug
     });
     res.status(201).json(newVideo);
+    recomputeCategoryStats().catch(e => console.error('CategoryStat sync error:', e));
   } catch (err) {
     console.error("Create video error:", err);
     res.status(500).json({ error: 'Failed to create video.' });
@@ -1119,6 +1149,7 @@ app.put('/api/videos/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Video not found.' });
     }
     res.json(updated);
+    recomputeCategoryStats().catch(e => console.error('CategoryStat sync error:', e));
   } catch (err) {
     console.error("Update video error:", err);
     res.status(500).json({ error: 'Failed to update video.' });
@@ -1133,6 +1164,7 @@ app.delete('/api/videos/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Video not found.' });
     }
     res.json({ success: true, message: 'Video deleted.' });
+    recomputeCategoryStats().catch(e => console.error('CategoryStat sync error:', e));
   } catch (err) {
     console.error("Delete video error:", err);
     res.status(500).json({ error: 'Failed to delete video.' });
