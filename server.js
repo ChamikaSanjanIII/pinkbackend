@@ -451,10 +451,37 @@ app.get('/api/videos', async (req, res) => {
 });
 
 const PRESET_CATEGORY_NAMES = [
-  'Asian', 'Blowjob', 'Brunette', 'Big Tits', 'Hardcore', 'Amateur', 
-  'Cumshot', 'Pornstar', 'Blonde', 'Anal', 'Big Dick', 'Teen', 
-  'Homemade', 'POV', 'MILF', 'Lesbian', 'HD Video', 'Hotlink', 'Action',
-  'Compilation', 'Erotica', 'Hentai', 'Behind the Scenes'
+  "18 Year Old", "3D", "69", "African", "Agent", "Ahegao", "Alien", "Amateur", "American", "Amputee", 
+  "AMWF", "Anal", "Anal Beads", "Anal Masturbation", "Arab", "Armpit", "Asian", "ASMR", "Ass", "Ass Licking", 
+  "Ass to Mouth", "Audition", "Babe", "Babysitter", "Baddie", "Ball Gagged", "Ballbusting", "Balloon", "BBC", "BBW", 
+  "BDSM", "Beauty", "Behind the Scenes", "Belly Fetish", "Big Ass", "Big Clit", "Big Cock", "Big Natural Tits", "Big Nipples", "Big Tits", 
+  "Bikini", "Birthday", "Bisexual", "Black", "Blindfolded", "Blonde", "Blowbang", "Blowjob", "Body Hair Fetish", "Body Paint", 
+  "Body Swap", "Bodystocking", "Bondage", "Boss", "Bra", "Brunette", "Brutal Sex", "Bukkake", "Bunny", "Butt Plug", 
+  "BWC", "Cameltoe", "Caption", "Cartoon", "Casting", "Catfight", "CBT", "CEI", "Celebrity", "CFNM", 
+  "Chastity", "Cheating", "Cheerleader", "Chubby", "Clit", "Close-up", "Clown", "CMNF", "Coed", "Colored Hair", 
+  "Comic", "Compilation", "Condom", "Cook", "Cosplay", "Cougar", "Couple", "Cowgirl", "Creampie", "Cuckold", 
+  "Cum in Mouth", "Cum on Feet", "Cum on Tits", "Cum Swallowing", "Cumshot", "Cumswap", "Cunnilingus", "Cute", "Daddy", "Dance", 
+  "Deep Throat", "Desi", "Dildo", "Dirty Talk", "Doctor", "Dogging", "Doggy Style", "Doll", "Domination", "Double Dildo", 
+  "Double Penetration", "Dry Humping", "E-girl", "Eating Pussy", "Edging", "Emo", "Enema", "Erotica", "Escort", "Estim", 
+  "European", "Exotic", "Extreme Insertion", "Face Fetish", "Face Fuck", "Facesitting", "Facial", "Fake Tits", "Fantasy", "Farting", 
+  "FBB", "Female Masturbation", "Femdom", "Fetish", "Fingering", "Fishnet", "Fisting", "Flashing", "Flexible", "Food", 
+  "Foot Fetish", "Foot Worship", "Footjob", "Foreplay", "Foursome", "Fucking Machine", "Funny", "Futanari", "Gangbang", "Gaping", 
+  "Giant", "Giantess", "GILF", "Glasses", "Gloves", "Gokkun", "Gonzo", "Granny", "Group Sex", "Gyno Fetish", 
+  "Hairy", "Hand Fetish", "Handjob", "Happy Ending", "Hardcore", "HD Video", "Hentai", "Hermaphrodite", "High Heels", "Hitachi", 
+  "Hogtied", "Homemade", "Hotlink", "Human Ashtray", "Human Furniture", "Humiliation", "Humping", "Interactive", "Interracial", "JAV", 
+  "Jeans", "Jewish", "Kinky", "Kissing", "Lactating", "Latex", "Latina", "Leather", "Leggings", "Legs", 
+  "Lesbian", "Lezdom", "Lingerie", "Long Hair", "Masked", "Massage", "Mature", "Midget", "MILF", "Milk", 
+  "Mind Control", "Missionary", "Moaning", "Mom", "Monster Cock", "Mouth Fetish", "Muscular Woman", "Mzansi", "Nipples", "Nude", 
+  "Nylon", "Oiled", "Old & Young", "Old man", "Orgasm", "Orgasm Control", "Orgy", "Panties", "Pantyhose", "PAWG", 
+  "Pedal Pumping", "Pegging", "Perfect Body", "Pet Play", "Petite", "Piercing", "Pissing", "PMV", "Pornstar", "POV", 
+  "Predicament Bondage", "Pregnant", "Prostate Massage", "Puffy Nipples", "Punishment", "Pussy", "Pussy Pump", "Raceplay", "Redhead", "Retro", 
+  "Riding", "Rimjob", "Rough Anal", "Rough Sex", "Saggy Tits", "School Uniform", "Scissoring", "Screaming", "Sex Toy", "Shaving", 
+  "Shibari", "Short Hair", "Show", "Sissy", "Skinny", "Skirt", "Small Penis Encouragement", "Small Penis Humiliation", "Small Tits", "Smoking", 
+  "Smothering", "Socks", "Softcore", "Solo", "Spandex", "Spanking", "Spitting", "Squirting", "SSBBW", "Stockings", 
+  "Story", "Strapon", "Striptease", "Submissive", "Suspension Bondage", "Sybian", "Tan Girl", "Tape Bondage", "Tattoo", "Teen", 
+  "Thong", "Threesome", "Tickling", "Tied Up", "Tight Pussy", "Tits", "Titty Fucking", "Trampling", "Twerking", "Uncensored", 
+  "Uniform", "Vibrator", "Vintage", "Wax Play", "Webcam", "Wedgie", "Weird", "Wet and Messy", "Whipping", "Wrestling", 
+  "Yoga"
 ];
 
 async function recomputeCategoryStats() {
